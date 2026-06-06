@@ -1,0 +1,19 @@
+networks:
+  nginx:
+    name: nginx
+    external: true
+
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    restart: unless-stopped
+    ports:
+      - "8090:80"
+    volumes:
+      - /srv/audiobookshelf/config:/config
+      - /srv/audiobookshelf/metadata:/metadata
+      - /srv/media/podcasts:/podcasts
+      - /mnt/nas/Media/Audiobooks:/audiobooks
+    networks:
+      - nginx

@@ -1,0 +1,50 @@
+networks:
+  searxng_internal:
+    name: searxng_internal
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  valkey_data:
+  searxng_data:
+
+services:
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    container_name: searxng_caddy
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - SEARXNG_HOSTNAME=${SEARXNG_HOSTNAME:-http://localhost}
+      - SEARXNG_TLS=${LETSENCRYPT_EMAIL:-internal}
+
+  redis:
+    image: docker.io/valkey/valkey:8-alpine
+    container_name: searxng_redis
+    command: valkey-server --save 30 1 --loglevel warning
+    restart: unless-stopped
+    networks:
+      - searxng_internal
+    volumes:
+      - valkey_data:/data
+    mem_limit: 128m
+
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - searxng_internal
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+      - searxng_data:/var/cache/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=https://${SEARXNG_HOSTNAME:-localhost}/
+    mem_limit: 512m

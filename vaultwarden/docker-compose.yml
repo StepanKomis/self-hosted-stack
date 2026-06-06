@@ -1,0 +1,21 @@
+volumes:
+  vaultwarden_data:
+    external: true
+    name: vaultwarden-data
+
+networks:
+  nginx:
+    name: nginx
+    external: true
+
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      - "90:80"
+    volumes:
+      - vaultwarden_data:/data
+    networks:
+      - nginx

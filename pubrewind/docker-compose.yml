@@ -1,0 +1,38 @@
+# Build images before first deploy:
+#   docker build -t pubrewind-server:local /home/dfs/PubRewind-server/
+#   docker build -t pubrewind-admin:local   /home/dfs/PubRewind-Admin-Console/
+#   docker build -t pubdb:local -f /home/dfs/PubRewind-server/Dockerfile.db /home/dfs/PubRewind-server/
+
+volumes:
+  db_data:
+    external: true
+    name: pubrewind_db_data
+
+networks:
+  pubrewind_internal:
+    name: pubrewind_default
+    driver: bridge
+
+services:
+  pubrewind-server:
+    image: pubrewind-server:local
+    container_name: pubrewind-server
+    restart: unless-stopped
+    network_mode: host
+
+  pubrewind-database-server:
+    image: pubdb:local
+    container_name: pubrewind-database-server
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  pubrewind-admin:
+    image: pubrewind-admin:local
+    container_name: pubrewind-admin
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - pubrewind_internal

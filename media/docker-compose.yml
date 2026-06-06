@@ -1,0 +1,97 @@
+volumes:
+  jellyfin_config:
+  jellyfin_cache:
+  jellyseerr_data:
+
+networks:
+  media:
+    name: media
+    driver: bridge
+    internal: true
+  servarr:
+    name: servarr
+    external: true
+  nginx:
+    name: nginx
+    external: true
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  # AMD RX 5xx (Polaris) hardware transcoding via VAAPI (mesa radeonsi driver).
+  # Do NOT set DOCKER_MODS=jellyfin-opencl-intel — that mod is Intel-only and will
+  # segfault on AMD hardware. VAAPI with radeonsi works out-of-the-box in the
+  # linuxserver image; no extra mod is needed.
+  #
+  # In Jellyfin UI: Dashboard → Playback → Transcoding
+  #   Hardware acceleration: Video Acceleration API (VAAPI)
+  #   VA API Device:         /dev/dri/renderD128
+  #   Enable all codec checkboxes available.
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: ../.env
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      JELLYFIN_PublishedServerUrl: ${SERVER_URL}
+      LIBVA_DRIVER_NAME: radeonsi
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+      - ${MEDIA_DIR}:/media:ro
+    devices:
+      - /dev/dri:/dev/dri
+    ports:
+      - "8096:8096"
+      - "8920:8920"
+    networks:
+      - media
+      - nginx
+    mem_limit: 4g
+    cpus: 8.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsSL http://localhost:8096/health -o /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    restart: unless-stopped
+    logging: *default-logging
+    init: true
+    env_file: ../.env
+    environment:
+      TZ: ${TZ}
+      LOG_LEVEL: info
+      PORT: 5055
+    volumes:
+      - jellyseerr_data:/app/config
+    ports:
+      - "5055:5055"
+    networks:
+      - media
+      - servarr
+      - nginx
+    mem_limit: 256m
+    cpus: 2.0
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsSL http://localhost:5055/api/v1/status -o /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s

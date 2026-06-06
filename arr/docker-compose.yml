@@ -1,0 +1,424 @@
+volumes:
+  radarr_data:
+  sonarr_data:
+  lidarr_data:
+  whisparr_data:
+  prowlarr_data:
+  qbittorrent_data:
+  tdarr_server:
+  tdarr_configs:
+  tdarr_logs:
+  navidrome_data:
+  maintainerr_data:
+
+networks:
+  servarr:
+    name: servarr
+    driver: bridge
+  nginx:
+    name: nginx
+    external: true
+  music:
+    name: music
+    driver: bridge
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "1"
+
+x-arr-base: &arr-base
+  restart: unless-stopped
+  networks:
+    - servarr
+    - nginx
+  logging: *default-logging
+
+services:
+
+  # ── Indexer ──────────────────────────────────────────────────────────────────
+
+  prowlarr:
+    <<: *arr-base
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - prowlarr_data:/config
+    ports:
+      - "9696:9696"
+    mem_limit: 512m
+    cpus: 2
+    healthcheck:
+      test: curl -f http://localhost:9696/api/v1/system/status || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  flaresolverr:
+    <<: *arr-base
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    env_file: ../.env
+    environment:
+      - LOG_LEVEL=info
+      - TZ=${TZ}
+    ports:
+      - "8191:8191"
+    mem_limit: 512m
+    cpus: 2
+    healthcheck:
+      test: curl -f http://localhost:8191 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Downloader ───────────────────────────────────────────────────────────────
+
+  qbittorrent:
+    <<: *arr-base
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=${TORRENTING_PORT}
+    volumes:
+      - qbittorrent_data:/config
+      - ${DOWNLOADS_DIR}:/downloads
+    ports:
+      - "8080:8080"
+      - "${TORRENTING_PORT}:${TORRENTING_PORT}"
+      - "${TORRENTING_PORT}:${TORRENTING_PORT}/udp"
+    healthcheck:
+      test: curl -f http://localhost:8080 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Library managers ─────────────────────────────────────────────────────────
+
+  radarr:
+    <<: *arr-base
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - radarr_data:/config
+      - ${MOVIE_DIR}:/movies
+      - ${DOWNLOADS_DIR}:/downloads
+    ports:
+      - "7878:7878"
+    mem_limit: 512m
+    cpus: 2
+    depends_on:
+      qbittorrent:
+        condition: service_healthy
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: curl -f http://localhost:7878/api/v3/system/status || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  sonarr:
+    <<: *arr-base
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - sonarr_data:/config
+      - ${TV_DIR}:/tv
+      - ${DOWNLOADS_DIR}:/downloads
+    ports:
+      - "8989:8989"
+    mem_limit: 512m
+    cpus: 2
+    depends_on:
+      qbittorrent:
+        condition: service_healthy
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: curl -f http://localhost:8989/api/v3/system/status || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  lidarr:
+    <<: *arr-base
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - lidarr_data:/config
+      - ${MUSIC_DIR}:/music
+      - ${DOWNLOADS_DIR}:/downloads
+    ports:
+      - "8686:8686"
+    mem_limit: 1g
+    cpus: 4
+    depends_on:
+      qbittorrent:
+        condition: service_healthy
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: curl -f http://localhost:8686/api/v1/system/status || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  whisparr:
+    <<: *arr-base
+    image: ghcr.io/thespad/whisparr:latest
+    container_name: whisparr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    volumes:
+      - whisparr_data:/config
+      - ${ADULT_DIR}:/adult
+      - ${DOWNLOADS_DIR}:/downloads
+    ports:
+      - "6969:7878"
+    mem_limit: 512m
+    cpus: 2
+    depends_on:
+      qbittorrent:
+        condition: service_healthy
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: curl -f http://localhost:7878/api/v3/system/status || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  bazarr:
+    <<: *arr-base
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /opt/servarr/bazarr:/config
+      - ${MOVIE_DIR}:/movies
+      - ${TV_DIR}:/tv
+    ports:
+      - "6767:6767"
+    mem_limit: 512m
+    cpus: 2
+    healthcheck:
+      test: curl -f http://localhost:6767 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Queue maintenance ─────────────────────────────────────────────────────────
+
+  decluttarr:
+    <<: *arr-base
+    image: ghcr.io/manimatter/decluttarr:latest
+    container_name: decluttarr
+    env_file: ../.env
+    environment:
+      - TZ=${TZ}
+      - LOG_LEVEL=INFO
+      - RADARR_URL=http://radarr:7878
+      - RADARR_KEY=${RADARR_API_KEY}
+      - SONARR_URL=http://sonarr:8989
+      - SONARR_KEY=${SONARR_API_KEY}
+      - LIDARR_URL=http://lidarr:8686
+      - LIDARR_KEY=${LIDARR_API_KEY}
+      - WHISPARR_URL=http://whisparr:7878
+      - WHISPARR_KEY=${WHISPARR_API_KEY}
+      - QBITTORRENT_URL=http://qbittorrent:8080
+      - REMOVE_TIMER=10
+      - REMOVE_FAILED=true
+      - REMOVE_FAILED_IMPORTS=true
+      - REMOVE_METADATA_MISSING=true
+      - REMOVE_MISSING_FILES=true
+      - REMOVE_ORPHANS=true
+      - REMOVE_SLOW=false
+      - REMOVE_STALLED=true
+      - REMOVE_UNMONITORED=false
+      - MIN_DOWNLOAD_SPEED=0
+      - PERMITTED_ATTEMPTS=3
+      - NO_INTERNET_RETRY_ATTEMPTS=3
+      - FAILED_IMPORT_MESSAGE_PATTERNS=["Not a Custom Format upgrade", "Not an upgrade for existing"]
+    mem_limit: 128m
+    cpus: 1
+    depends_on:
+      radarr:
+        condition: service_healthy
+      sonarr:
+        condition: service_healthy
+
+  maintainerr:
+    <<: *arr-base
+    image: ghcr.io/jorenn92/maintainerr:latest
+    container_name: maintainerr
+    env_file: ../.env
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - maintainerr_data:/opt/data
+    ports:
+      - "6246:6246"
+    mem_limit: 256m
+    cpus: 1
+    healthcheck:
+      test: curl -f http://localhost:6246/api/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Transcoding — AMD RX 580 VAAPI + ROCm ────────────────────────────────────
+
+  tdarr:
+    <<: *arr-base
+    image: ghcr.io/haveagitgat/tdarr:latest
+    container_name: tdarr
+    env_file: ../.env
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK_SET=002
+      - serverIP=0.0.0.0
+      - serverPort=8266
+      - webUIPort=8265
+      - internalNode=true
+      - inContainer=true
+      - ffmpegVersion=6
+      - nodeName=MainNode
+      - LIBVA_DRIVER_NAME=radeonsi
+      - ROC_ENABLE_PRE_VEGA=1
+      - HSA_OVERRIDE_GFX_VERSION=8.0.3
+    volumes:
+      - tdarr_server:/app/server
+      - tdarr_configs:/app/configs
+      - tdarr_logs:/app/logs
+      - ${MEDIA_DIR}:/media
+      - ${TRANSCODE_CACHE_DIR}:/temp
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+    ports:
+      - "8265:8265"
+      - "8266:8266"
+    mem_limit: 4g
+    cpus: 8
+    healthcheck:
+      test: curl -f http://localhost:8265 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Music streaming ───────────────────────────────────────────────────────────
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: ../.env
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+      - ND_SCANSCHEDULE=1h
+      - ND_LOGLEVEL=info
+      - ND_SESSIONTIMEOUT=24h
+      - ND_ENABLETRANSCODINGCONFIG=true
+      - ND_TRANSCODINGCACHESIZE=500MB
+      - ND_IMAGECACHESIZE=100MB
+      - ND_LASTFM_ENABLED=${ND_LASTFM_ENABLED:-false}
+      - ND_LASTFM_APIKEY=${ND_LASTFM_APIKEY:-}
+      - ND_LASTFM_SECRET=${ND_LASTFM_SECRET:-}
+      - ND_SPOTIFY_ID=${ND_SPOTIFY_ID:-}
+      - ND_SPOTIFY_SECRET=${ND_SPOTIFY_SECRET:-}
+    volumes:
+      - navidrome_data:/data
+      - ${MUSIC_DIR}:/music:ro
+    ports:
+      - "4533:4533"
+    networks:
+      - servarr
+      - nginx
+      - music
+    mem_limit: 512m
+    cpus: 2
+    healthcheck:
+      test: curl -f http://localhost:4533/ping || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  feishin:
+    image: ghcr.io/jeffvli/feishin:latest
+    container_name: feishin
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: ../.env
+    environment:
+      - SERVER_NAME=${FEISHIN_SERVER_NAME:-Navidrome}
+      - SERVER_TYPE=navidrome
+      - SERVER_URL=http://navidrome:4533
+      - SERVER_LOCK=false
+    ports:
+      - "9180:9180"
+    networks:
+      - servarr
+      - nginx
+      - music
+    mem_limit: 128m
+    cpus: 1
+    depends_on:
+      navidrome:
+        condition: service_healthy
+    healthcheck:
+      test: curl -f http://localhost:9180 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

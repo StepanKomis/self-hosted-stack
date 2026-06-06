@@ -1,0 +1,12 @@
+volumes:
+  model_cache:
+
+services:
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: immich-ml-immich-machine-learning-1
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    volumes:
+      - model_cache:/cache
